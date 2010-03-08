@@ -52,9 +52,18 @@ class Signals(object):
                 (name, obj)
         d = cls._connections.setdefault(obj, {})
         if type(callback) is instancedmethod:
+            # Memory leak fix.
+            # Because proxy(instancedmethod) doesn't work.
             callback = (proxy(callback.__self__), callback.im_func.func_name)
-        elif type(callback) is not function:
-            raise TypeError
+        elif type(callback) is function:
+            callback = proxy(callback)
+        else:
+            # To make developers more aware.
+            errstr = ["Not sure how to proxy this type of object! Potential memory leak!"]
+            errstr.append("Report this problem to the Urwid mailing list.")
+            errstr.append("Object type: %s" % str(type(callback)))
+            errstr = '\n'.join(errstr)
+            raise TypeError(errstr)
         d.setdefault(name, []).append((callback, user_arg))
     connect = classmethod(connect)
         
