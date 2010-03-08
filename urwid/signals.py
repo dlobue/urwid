@@ -19,8 +19,6 @@
 #
 # Urwid web site: http://excess.org/urwid/
 from weakref import WeakKeyDictionary, proxy
-from types import MethodType as instancedmethod
-from types import FunctionType as function
 
 class MetaSignals(type):
     """
@@ -51,10 +49,10 @@ class Signals(object):
             raise NameError, "No such signal %r for object %r" % \
                 (name, obj)
         d = cls._connections.setdefault(obj, {})
-        if type(callback) is instancedmethod:
+        try:
             callback = (proxy(callback.__self__), callback.im_func.func_name)
-        elif type(callback) is not function:
-            raise TypeError
+        except AttributeError:
+            callback = proxy(callback)
         d.setdefault(name, []).append((callback, user_arg))
     connect = classmethod(connect)
         
