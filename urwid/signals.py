@@ -18,9 +18,9 @@
 #    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #
 # Urwid web site: http://excess.org/urwid/
-
-
-
+from weakref import WeakKeyDictionary, proxy
+from types import MethodType as instancedmethod
+from types import FunctionType as function
 
 class MetaSignals(type):
     """
@@ -33,102 +33,55 @@ class MetaSignals(type):
             signals.extend(getattr(superclass, 'signals', []))
         signals = dict([(x,None) for x in signals]).keys()
         d["signals"] = signals
-        register_signal(cls, signals)
+        Signals.register(cls, signals)
         super(MetaSignals, cls).__init__(name, bases, d)
-
-def setdefaultattr(obj, name, value):
-    # like dict.setdefault() for object attributes
-    if hasattr(obj, name):
-        return getattr(obj, name)
-    setattr(obj, name, value)
-    return value
 
 
 class Signals(object):
-    _signal_attr = '_urwid_signals' # attribute to attach to signal senders
+    _connections = WeakKeyDictionary()
+    _supported = WeakKeyDictionary()
 
-    def __init__(self):
-        self._supported = {}
+    def register(cls, sig_cls, signals):
+        cls._supported[sig_cls] = signals
+    register = classmethod(register)
 
-    def register(self, sig_cls, signals):
-        """
-        Available as:
-        urwid.regsiter_signal(sig_cls, signals)
-
-        sig_class -- the class of an object that will be sending signals
-        signals -- a list of signals that may be sent, typically each
-            signal is represented by a string
-
-        This function must be called for a class before connecting any
-        signal callbacks or emiting any signals from that class' objects
-        """
-        self._supported[sig_cls] = signals
-
-    def connect(self, obj, name, callback, user_arg=None):
-        """
-        Available as:
-        urwid.connect_signal(obj, name, callback, user_arg=None)
-
-        obj -- the object sending a signal
-        name -- the name of the signal, typically a string
-        callback -- the function to call when that signal is sent
-        user_arg -- optional additional argument to callback, if None
-            no arguments will be added
-        
-        When a matching signal is sent, callback will be called with
-        all the positional parameters sent with the signal.  If user_arg
-        is not None it will be sent added to the end of the positional
-        parameters sent to callback.
-        """
+    def connect(cls, obj, name, callback, user_arg=None):
         sig_cls = obj.__class__
-        if not name in self._supported.get(sig_cls, []):
+        if not name in cls._supported.get(sig_cls, []):
             raise NameError, "No such signal %r for object %r" % \
                 (name, obj)
-        d = setdefaultattr(obj, self._signal_attr, {})
+        d = cls._connections.setdefault(obj, {})
+        if type(callback) is instancedmethod:
+            callback = (proxy(callback.__self__), callback.im_func.func_name)
+        elif type(callback) is not function:
+            raise TypeError
         d.setdefault(name, []).append((callback, user_arg))
+    connect = classmethod(connect)
         
-    def disconnect(self, obj, name, callback, user_arg=None):
-        """
-        Available as:
-        urwid.disconnect_signal(obj, name, callback, user_arg=None)
-
-        This function will remove a callback from the list connected
-        to a signal with connect_signal().
-        """
-        d = setdefaultattr(obj, self._signal_attr, {})
+    def disconnect(cls, obj, name, callback, user_arg=None):
+        d = cls._connections.get(obj, {})
         if name not in d:
             return
         if (callback, user_arg) not in d[name]:
             return
         d[name].remove((callback, user_arg))
+    disconnect = classmethod(disconnect)
  
-    def emit(self, obj, name, *args):
-        """
-        Available as:
-        urwid.emit_signal(obj, name, *args)
-
-        obj -- the object sending a signal
-        name -- the name of the signal, typically a string
-        *args -- zero or more positional arguments to pass to the signal
-            callback functions
-
-        This function calls each of the callbacks connected to this signal
-        with the args arguments as positional parameters.
-
-        This function returns True if any of the callbacks returned True.
-        """
+    def emit(cls, obj, name, *args):
         result = False
-        d = getattr(obj, self._signal_attr, {})
+        d = cls._connections.get(obj, {})
         for callback, user_arg in d.get(name, []):
             args_copy = args
             if user_arg is not None:
-                args_copy = args + (user_arg,)
+                args_copy = args + [user_arg]
+            if type(callback) is tuple:
+                callback = getattr(callback[0], callback[1])
             result |= bool(callback(*args_copy))
         return result
+    emit = classmethod(emit)
 
 _signals = Signals()
 emit_signal = _signals.emit
 register_signal = _signals.register
 connect_signal = _signals.connect
 disconnect_signal = _signals.disconnect
-
