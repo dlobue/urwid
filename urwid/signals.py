@@ -52,7 +52,7 @@ class Signals(object):
         try:
             callback = (proxy(callback.__self__), callback.im_func.func_name)
         except AttributeError:
-            callback = proxy(callback)
+            callback = callback
         d.setdefault(name, []).append((callback, user_arg))
     connect = classmethod(connect)
         
